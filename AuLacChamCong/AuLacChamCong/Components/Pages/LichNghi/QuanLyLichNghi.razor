@@ -1,0 +1,603 @@
+﻿@page "/dsLichNghi"
+@using AuLacChamCong.Models.Shared
+@using AuLacChamCong.Models.Shared.ModelSearch
+@using AuLacChamCong.Models.ViewModel
+@using AuLacChamCong.Services.TinhCong
+@using AuLacChamCong.Services.Modules.LichNghi.Model
+@using AuLacChamCong.Services.Modules.LichNghi.Service
+@using System.Text.Json
+@inject ILichNghiServices _lichNghiServices
+@inject ITinhCongService _tinhCongServices
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<div>
+    <h1 class="mb-4">Quản lý lịch nghỉ</h1>
+
+    <!-- Filter Section -->
+    <div class="row mb-4 align-items-end">
+        <div class="col-md-2 col-sm-6">
+            <label class="mb-1">Nhân Viên:</label>
+            <select class="form-select" @bind="selectedEmployeeId" @bind:after="FilterByEmployee">
+                <option value="0">Chọn Nhân Viên</option>
+                @foreach (var employee in employees)
+                {
+                    <option value="@employee.PsnPrkID">@employee.PsnName</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-6">
+            <label class="mb-1">Từ Ngày:</label>
+            <input type="date" class="form-control" @bind="startDate" @bind:after="FilterByDate" />
+        </div>
+        <div class="col-md-2 col-sm-6">
+            <label class="mb-1">Đến Ngày:</label>
+            <input type="date" class="form-control" @bind="endDate" @bind:after="FilterByDate" />
+        </div>
+        <div class="col-md-2 col-sm-6">
+            <div class="input-group" style="min-width:330px">
+                <input type="text" class="form-control" placeholder="Tìm kiếm theo tên hoặc lý do" @bind="keyword" />
+                <button class="btn btn-info" @onclick="OnSearchClick">
+                    <i class="glyphicon glyphicon-search"></i> Tìm kiếm
+                </button>
+            </div>
+        </div>
+        <div class="col-md-2 col-sm-12 d-flex justify-content-end" style="margin-left:130px;">
+            <button type="button" class="btn btn-primary btn-sm me-2" data-bs-toggle="modal" style="margin-top: 20px;height: 40px;width: 130px;" data-bs-target="#lichNghiModal" @onclick="OpenAddLichNghiModal">
+                <i class="fa fa-plus" aria-hidden="true"></i> Thêm mới
+            </button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="alert alert-info">Đang tải dữ liệu...</div>
+    }
+    else if (filteredLichNghiList == null || filteredLichNghiList.Count == 0)
+    {
+        <div class="alert alert-info">Không có lịch xin nghỉ đang chờ xác nhận.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-bordered">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID Đơn</th>
+                        <th>Tên Nhân Viên</th>
+                        <th>Ngày nộp đơn</th>
+                        <th>Lý Do</th>
+                        <th>Bắt đầu từ</th>
+                        <th>Đến ngày</th>
+                        <th>Trạng thái</th>
+                        <th>Hành động</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var don in filteredLichNghiList)
+                    {
+                        <tr>
+                            <td>@don.LichNghiID</td>
+                            <td>@don.PersonnelsName</td>
+                            <td>@don.NgayNopDon.ToString("dd/MM/yyyy")</td>
+                            <td>@don.LyDo</td>
+                            <td>@don.ThoiGianBatDau</td>
+                            <td>@don.ThoiGianKetThuc</td>
+                            <td>
+                                <span class="badge @(don.Status == 0 ? "bg-warning text-dark" : don.Status == 1 ? "bg-success" : "bg-danger")">
+                                    @don.StatusDescription
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-warning btn-sm me-2" data-bs-toggle="modal" data-bs-target="#lichNghiModal" @onclick="() => OpenEditLichNghiModal(don.LichNghiID)">
+                                    Chỉnh sửa
+                                </button>
+                                <button class="btn btn-success btn-sm me-2" @onclick="() => ShowConfirmModal(don, true)">
+                                    Xác nhận
+                                </button>
+                                <button class="btn btn-danger btn-sm" @onclick="() => ShowConfirmModal(don, false)">
+                                    Từ chối
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    <div class="d-flex justify-content-sm-end">
+        <button type="button" class="btn btn-info " data-bs-toggle="modal" data-bs-target="#historyModal" @onclick="ViewHistory">
+            Xem Lịch Sử
+        </button>
+    </div>
+
+</div>
+
+<!-- Modal for Adding/Editing Leave Request -->
+<div class="modal fade" id="lichNghiModal" tabindex="-1" aria-labelledby="lichNghiModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="lichNghiModalLabel">@(newLichNghi.LichNghiID > 0 ? "Chỉnh Sửa Lịch Nghỉ" : "Thêm Lịch Nghỉ")</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Tên Nhân Viên:</label>
+                    <select class="form-select" @bind="newLichNghi.PsnPrkID">
+                        <option value="0">Chọn Nhân Viên</option>
+                        @foreach (var employee in employees)
+                        {
+                            <option value="@employee.PsnPrkID">@employee.PsnName</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Ngày Nộp Đơn:</label>
+                    <input type="date" class="form-control" @bind="newLichNghi.NgayNopDon" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Lý Do:</label>
+                    <input type="text" class="form-control" @bind="newLichNghi.LyDo" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Bắt Đầu Từ:</label>
+                    <input type="date" class="form-control" @bind="newLichNghi.ThoiGianBatDau" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Đến Ngày:</label>
+                    <input type="date" class="form-control" @bind="newLichNghi.ThoiGianKetThuc" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="button" class="btn btn-primary" @onclick="SaveLichNghi">Lưu</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Xác nhận -->
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmModalLabel">@(isConfirmAction ? "Xác nhận đơn nghỉ" : "Từ chối đơn nghỉ")</h5>
+                <button type="button" class="btn-close" @onclick="HideModal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Bạn có chắc chắn muốn @(isConfirmAction ? "xác nhận" : "từ chối") đơn nghỉ này không?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="HideModal">Hủy</button>
+                <button type="button" class="btn @(isConfirmAction ? "btn-success" : "btn-danger")" @onclick="ProcessAction">Đồng ý</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thông báo kết quả -->
+<div class="modal fade" id="resultModal" tabindex="-1" aria-labelledby="resultModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="resultModalLabel">Thông báo</h5>
+                <button type="button" class="btn-close" @onclick="HideResultModal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                @resultMessage
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" @onclick="HideResultModal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Viewing History -->
+<div class="modal fade" id="historyModal" tabindex="-1" aria-labelledby="historyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="historyModalLabel">Lịch Sử Đơn Nghỉ</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                @if (isLoadingHistory)
+                {
+                    <div class="text-center">Đang tải lịch sử...</div>
+                }
+                else if (filteredHistory == null || !filteredHistory.Any())
+                {
+                    <div class="alert alert-info">Không có lịch sử đơn nghỉ nào.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-striped table-bordered">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID Đơn</th>
+                                    <th>Tên Nhân Viên</th>
+                                    <th>Ngày Nộp Đơn</th>
+                                    <th>Lý Do</th>
+                                    <th>Bắt Đầu Từ</th>
+                                    <th>Đến Ngày</th>
+                                    <th>Trạng Thái</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var don in filteredHistory)
+                                {
+                                    <tr>
+                                        <td>@don.LichNghiID</td>
+                                        <td>@(don.PersonnelsName ?? employees.FirstOrDefault(p => p.PsnPrkID == don.PsnPrkID)?.PsnName ?? "N/A")</td>
+                                        <td>@don.NgayNopDon.ToString("dd/MM/yyyy")</td>
+                                        <td>@don.LyDo</td>
+                                        <td>@don.ThoiGianBatDau</td>
+                                        <td>@don.ThoiGianKetThuc</td>
+                                        <td>
+                                            <span class="badge @(don.Status == 0 ? "bg-warning text-dark" : don.Status == 1 ? "bg-success" : "bg-danger")">
+                                                @don.StatusDescription
+                                            </span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = false;
+    private bool isLoadingHistory = false;
+    private bool isProcessing = true;
+    private List<PersonnelsDb> employees = new();
+    private List<LichNghiDb> lichNghiList = new();
+    private List<LichNghiSearch> filteredLichNghiList = new();
+    private List<LichNghiSearch> historyItems = new();
+    private List<LichNghiSearch> filteredHistory = new();
+    private LichNghiSearch selectedLN;
+    private LichNghiSearch newLichNghi = new();
+    private bool isConfirmAction;
+    private string resultMessage;
+    private string keyword = string.Empty;
+    private int selectedEmployeeId = 0;
+    private DateTime? startDate = null;
+    private DateTime? endDate = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            isLoading = true;
+            isLoadingHistory = true;
+
+            // Load employees
+            employees = _tinhCongServices.getsNhanVien().ToList();
+            Console.WriteLine($"Loaded {employees.Count} employees");
+
+            // Fetch all leave requests from the service
+            lichNghiList = await _lichNghiServices.GetAllLichNghiAsync();
+
+            // Populate the filtered list with in-progress records initially (Status == 0)
+            filteredLichNghiList = lichNghiList
+                .Where(d => d.Status == 0) // Only in-progress leave requests
+                .Select(d => new LichNghiSearch
+                    {
+                        LichNghiID = d.LichNghiID,
+                        PsnPrkID = d.PsnPrkID,
+                        LoaiNghiName = d.LoaiNghiName,
+                        ThoiGianBatDau = d.ThoiGianBatDau,
+                        ThoiGianKetThuc = d.ThoiGianKetThuc,
+                        LyDo = d.LyDo,
+                        Status = d.Status,
+                        StatusDescription = d.StatusDescription,
+                        NgayNopDon = d.NgayNopDon,
+                        PersonnelsName = d.Personnels?.PsnName ?? employees.FirstOrDefault(p => p.PsnPrkID == d.PsnPrkID)?.PsnName
+                    }).ToList();
+
+            // Load history data (approved and rejected leave requests)
+            var historyData = await _lichNghiServices.GetLichNghiHistory();
+            historyItems = historyData
+                .Select(d => new LichNghiSearch
+                    {
+                        LichNghiID = d.LichNghiID,
+                        PsnPrkID = d.PsnPrkID,
+                        LoaiNghiName = d.LoaiNghiName,
+                        ThoiGianBatDau = d.ThoiGianBatDau,
+                        ThoiGianKetThuc = d.ThoiGianKetThuc,
+                        LyDo = d.LyDo,
+                        Status = d.Status,
+                        StatusDescription = d.StatusDescription,
+                        NgayNopDon = d.NgayNopDon,
+                        PersonnelsName = d.Personnels?.PsnName ?? employees.FirstOrDefault(p => p.PsnPrkID == d.PsnPrkID)?.PsnName
+                    }).ToList();
+
+            FilterHistory();
+
+            Console.WriteLine($"Danh sách lịch nghỉ: {JsonSerializer.Serialize(lichNghiList)}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Lỗi khi lấy danh sách: {ex.Message}");
+            lichNghiList = new List<LichNghiDb>();
+            filteredLichNghiList = new List<LichNghiSearch>();
+            historyItems = new List<LichNghiSearch>();
+            filteredHistory = new List<LichNghiSearch>();
+        }
+        finally
+        {
+            isLoading = false;
+            isLoadingHistory = false;
+        }
+    }
+
+    private void FilterByEmployee()
+    {
+        FilterLichNghiList();
+        FilterHistory();
+    }
+
+    private void FilterByDate()
+    {
+        FilterLichNghiList();
+        FilterHistory();
+    }
+
+    private void FilterLichNghiList()
+    {
+        var tempFiltered = lichNghiList
+            .Where(d => d.Status == 0) // Only in-progress leave requests
+            .Select(d => new LichNghiSearch
+                {
+                    LichNghiID = d.LichNghiID,
+                    PsnPrkID = d.PsnPrkID,
+                    LoaiNghiName = d.LoaiNghiName,
+                    ThoiGianBatDau = d.ThoiGianBatDau,
+                    ThoiGianKetThuc = d.ThoiGianKetThuc,
+                    LyDo = d.LyDo,
+                    Status = d.Status,
+                    StatusDescription = d.StatusDescription,
+                    NgayNopDon = d.NgayNopDon,
+                    PersonnelsName = d.Personnels?.PsnName ?? employees.FirstOrDefault(p => p.PsnPrkID == d.PsnPrkID)?.PsnName
+                }).ToList();
+
+        // Apply employee filter
+        if (selectedEmployeeId != 0)
+        {
+            tempFiltered = tempFiltered
+                .Where(d => d.PsnPrkID == selectedEmployeeId)
+                .ToList();
+        }
+
+        // Apply date range filter
+        if (startDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(d => d.NgayNopDon.Date >= startDate.Value.Date)
+                .ToList();
+        }
+        if (endDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(d => d.NgayNopDon.Date <= endDate.Value.Date)
+                .ToList();
+        }
+
+        // Apply keyword filter
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            tempFiltered = tempFiltered
+                .Where(d => (d.PersonnelsName?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (d.LyDo?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false))
+                .ToList();
+        }
+
+        filteredLichNghiList = tempFiltered;
+        StateHasChanged();
+    }
+
+    private void FilterHistory()
+    {
+        var tempFiltered = historyItems; // Already filtered for Status == 1 or Status == -1 by GetLichNghiHistory
+
+        // Apply employee filter
+        if (selectedEmployeeId != 0)
+        {
+            tempFiltered = tempFiltered
+                .Where(h => h.PsnPrkID == selectedEmployeeId)
+                .ToList();
+        }
+
+        // Apply date range filter
+        if (startDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(h => h.NgayNopDon.Date >= startDate.Value.Date)
+                .ToList();
+        }
+        if (endDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(h => h.NgayNopDon.Date <= endDate.Value.Date)
+                .ToList();
+        }
+
+        // Apply keyword filter
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            tempFiltered = tempFiltered
+                .Where(h => (h.PersonnelsName?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (h.LyDo?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false))
+                .ToList();
+        }
+
+        filteredHistory = tempFiltered;
+        StateHasChanged();
+    }
+
+    private async void OnSearchClick()
+    {
+        FilterLichNghiList();
+        FilterHistory();
+    }
+
+    private void OpenAddLichNghiModal()
+    {
+        newLichNghi = new LichNghiSearch { LichNghiID = 0, PsnPrkID = 0 }; // ID = 0 for new leave request
+        Console.WriteLine("Opening modal to add new leave request...");
+    }
+
+    private void OpenEditLichNghiModal(int? lichNghiID)
+    {
+        var lichNghiToEdit = filteredLichNghiList.FirstOrDefault(d => d.LichNghiID == lichNghiID);
+        if (lichNghiToEdit != null)
+        {
+            newLichNghi = new LichNghiSearch
+                {
+                    LichNghiID = lichNghiToEdit.LichNghiID,
+                    PsnPrkID = lichNghiToEdit.PsnPrkID,
+                    PersonnelsName = lichNghiToEdit.PersonnelsName,
+                    NgayNopDon = lichNghiToEdit.NgayNopDon,
+                    LyDo = lichNghiToEdit.LyDo,
+                    ThoiGianBatDau = lichNghiToEdit.ThoiGianBatDau,
+                    ThoiGianKetThuc = lichNghiToEdit.ThoiGianKetThuc,
+                    Status = lichNghiToEdit.Status,
+                    StatusDescription = lichNghiToEdit.StatusDescription
+                };
+            Console.WriteLine($"Opening modal to edit leave request with ID {lichNghiID}...");
+        }
+    }
+
+    private async Task SaveLichNghi()
+    {
+        // Validate inputs
+        if (newLichNghi.PsnPrkID == 0 ||
+            string.IsNullOrWhiteSpace(newLichNghi.LyDo) ||
+            newLichNghi.NgayNopDon == default ||
+            newLichNghi.ThoiGianBatDau == default ||
+            newLichNghi.ThoiGianKetThuc == default)
+        {
+            Console.WriteLine("[ERROR] Vui lòng điền đầy đủ thông tin!");
+            return;
+        }
+
+        if (newLichNghi.LichNghiID > 0)
+        {
+            // Update existing leave request
+            var lichNghiToUpdate = lichNghiList.FirstOrDefault(d => d.LichNghiID == newLichNghi.LichNghiID);
+            if (lichNghiToUpdate != null)
+            {
+                Console.WriteLine($"[DEBUG] Found leave request to update: ID {newLichNghi.LichNghiID}, Old Reason: {lichNghiToUpdate.LyDo}");
+
+                // Update the fields
+                lichNghiToUpdate.PsnPrkID = newLichNghi.PsnPrkID;
+                lichNghiToUpdate.NgayNopDon = newLichNghi.NgayNopDon;
+                lichNghiToUpdate.LyDo = newLichNghi.LyDo;
+                lichNghiToUpdate.ThoiGianBatDau = newLichNghi.ThoiGianBatDau;
+                lichNghiToUpdate.ThoiGianKetThuc = newLichNghi.ThoiGianKetThuc;
+
+                Console.WriteLine($"[INFO] Updated leave request with ID {newLichNghi.LichNghiID}, New Reason: {lichNghiToUpdate.LyDo}");
+            }
+            else
+            {
+                Console.WriteLine($"[ERROR] Leave request with ID {newLichNghi.LichNghiID} not found!");
+            }
+        }
+        else
+        {
+            // Add new leave request
+            var newLichNghiDb = new LichNghiDb
+                {
+                    LichNghiID = lichNghiList.Any() ? lichNghiList.Max(d => d.LichNghiID) + 1 : 1, // Simulate auto-increment ID
+                    PsnPrkID = newLichNghi.PsnPrkID,
+                    NgayNopDon = newLichNghi.NgayNopDon,
+                    LyDo = newLichNghi.LyDo,
+                    ThoiGianBatDau = newLichNghi.ThoiGianBatDau,
+                    ThoiGianKetThuc = newLichNghi.ThoiGianKetThuc,
+                    Status = 0, // Default status: Pending
+                    StatusDescription = "Chờ xác nhận"
+                };
+            lichNghiList.Add(newLichNghiDb);
+            Console.WriteLine($"[INFO] Added new leave request with ID {newLichNghiDb.LichNghiID}, Reason: {newLichNghiDb.LyDo}");
+        }
+
+        // Reset the form
+        newLichNghi = new LichNghiSearch();
+
+        // Close the modal
+        await JSRuntime.InvokeVoidAsync("bootstrap.Modal.getInstance", "#lichNghiModal", "hide");
+
+        // Reload the current page
+        Navigation.NavigateTo("/dsLichNghi", true);
+    }
+
+    private async Task ShowConfirmModal(LichNghiSearch don, bool confirm)
+    {
+        selectedLN = don;
+        isConfirmAction = confirm;
+        await JSRuntime.InvokeVoidAsync("showModal", "confirmModal");
+    }
+
+    private async Task HideModal()
+    {
+        await JSRuntime.InvokeVoidAsync("hideModal", "confirmModal");
+    }
+
+    private async Task HideResultModal()
+    {
+        await JSRuntime.InvokeVoidAsync("hideModal", "resultModal");
+    }
+
+    private async Task ProcessAction()
+    {
+        await HideModal();
+        isProcessing = true;
+
+        try
+        {
+            var success = await _lichNghiServices.UpdateLichNghiStatusAsync(selectedLN.LichNghiID ?? 0, isConfirmAction ? 1 : -1);
+
+            if (success)
+            {
+                selectedLN.Status = isConfirmAction ? 1 : -1;
+                selectedLN.StatusDescription = isConfirmAction ? "Đã xác nhận" : "Đã từ chối";
+                resultMessage = isConfirmAction ? "Xác nhận thành công!" : "Từ chối thành công!";
+            }
+            else
+            {
+                resultMessage = isConfirmAction ? "Lỗi khi xác nhận!" : "Lỗi khi từ chối!";
+            }
+        }
+        catch (Exception ex)
+        {
+            resultMessage = $"Đã xảy ra lỗi: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+            StateHasChanged();
+            await JSRuntime.InvokeVoidAsync("showModal", "resultModal");
+        }
+    }
+
+    private void ViewHistory()
+    {
+        FilterHistory();
+        StateHasChanged();
+    }
+
+    private void DonCongTacHistory()
+    {
+        Navigation.NavigateTo("/lichNghiHistory");
+    }
+}

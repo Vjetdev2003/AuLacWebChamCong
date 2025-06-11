@@ -1,0 +1,68 @@
+﻿@using AuLacChamCong.Services.Modules
+@using AuLacChamCong.Services.Modules.User.Service
+@inject NavigationManager Navigation
+@inject TokenService _tokenService
+@rendermode InteractiveServer
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">AuLacChamCong</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="home">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="donCongTac">
+                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Xử lý đơn công tác
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="quanLyNhanVien">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Quản lý Nhân Viên
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="dsLichNghi">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Quản lý lịch nghỉ
+            </NavLink>
+        </div> 
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="dsLichNghiLe">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Quản lý lịch nghỉ Lễ
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="quanLyChamCong">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Báo Cáo Chấm Công
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="faceId">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Quản lý nhận diện
+                </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <button class="btn btn-link nav-link" @onclick="Logout">
+               <i class="fas fa-sign-out-alt"></i> Logout
+            </button>
+        </div>
+    </nav>
+</div>
+@code{
+    private async Task Logout()
+    {
+        // Xóa token
+        await _tokenService.RemoveToken();
+
+        // Chuyển hướng về trang đăng nhập và ngăn quay lại
+        Navigation.NavigateTo("/", forceLoad: true);
+    }
+}

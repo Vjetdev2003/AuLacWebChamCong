@@ -1,0 +1,332 @@
+﻿@page "/faceID"
+@using AuLacChamCong.Services.Modules.ChamCong.Services.FaceIdSerivces
+@inject IJSRuntime JSRuntime
+@inject IFaceIdService FaceIdService
+@rendermode InteractiveServer
+
+<div class="face-recognition-container">
+    <h3>Quản lý khuôn mặt nhân viên</h3>
+
+    <div class="video-container">
+        <video id="webcam" autoplay playsinline style="width: 100%; max-width: 640px; height: auto;"></video>
+        <canvas id="canvas" style="display: none;"></canvas>
+    </div>
+
+    <!-- Phần đăng ký khuôn mặt -->
+    <div class="register-section mt-3">
+        <h4>Đăng ký khuôn mặt</h4>
+        <div class="form-group">
+            <label for="userId">Mã nhân viên (PsnPrkID):</label>
+            <input type="number" id="userId" class="form-control" @bind="UserId" placeholder="Nhập mã nhân viên" />
+        </div>
+        <button class="btn btn-primary mt-2" @onclick="RegisterFace" disabled="@(IsRecognizing || IsWebcamOff || IsRegistering)">Đăng ký</button>
+        @if (!string.IsNullOrEmpty(RegisterMessage))
+        {
+            <div class="alert alert-info mt-2">
+                @RegisterMessage
+            </div>
+        }
+    </div>
+
+    <!-- Phần nhận diện khuôn mặt -->
+    <div class="recognition-section mt-3">
+        <h4>Nhận diện khuôn mặt</h4>
+        <div class="controls">
+            @if (IsWebcamOff)
+            {
+                <button class="btn btn-success" @onclick="StartWebcam">Bật webcam</button>
+            }
+            else
+            {
+                @if (!IsRecognizing)
+                {
+                    <button class="btn btn-success" @onclick="StartRecognition">Bắt đầu nhận diện</button>
+                }
+                else
+                {
+                    <button class="btn btn-warning mr-2" @onclick="PauseRecognition">Dừng nhận diện</button>
+                    <button class="btn btn-danger" @onclick="StopWebcam">Tắt webcam</button>
+                }
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(Message))
+        {
+            <div class="alert alert-info mt-3">
+                @Message
+            </div>
+        }
+
+        @if (RecognizedEmployee != null)
+        {
+            <div class="alert alert-success mt-3">
+                <strong>Nhân viên được nhận diện:</strong> @RecognizedEmployee.PsnName (ID: @RecognizedEmployee.PsnPrkID)
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private bool IsRecognizing = false;
+    private bool IsWebcamOff = true;
+    private bool IsRegistering = false;
+    private string Message = "";
+    private string RegisterMessage = "";
+    private decimal UserId;
+    private EmployeeResult RecognizedEmployee = null;
+    private IJSObjectReference? module;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                module = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/faceRecognition.js");
+                Message = "JavaScript module đã được khởi tạo.";
+            }
+            catch (Exception ex)
+            {
+                Message = $"Lỗi khi khởi tạo JavaScript module: {ex.Message}";
+            }
+        }
+    }
+
+    private async Task StartWebcam()
+    {
+        try
+        {
+            if (module == null)
+            {
+                Message = "Không thể khởi tạo JavaScript module!";
+                return;
+            }
+
+            await module.InvokeVoidAsync("startWebcam");
+            IsWebcamOff = false;
+            Message = "Webcam đã được bật.";
+        }
+        catch (Exception ex)
+        {
+            Message = $"Lỗi khi bật webcam: {ex.Message}";
+        }
+    }
+
+    private async Task StopWebcam()
+    {
+        try
+        {
+            if (module != null)
+            {
+                await module.InvokeVoidAsync("stopWebcam");
+            }
+            IsWebcamOff = true;
+            IsRecognizing = false;
+            Message = "Webcam đã được tắt.";
+            RecognizedEmployee = null;
+            RegisterMessage = "";
+        }
+        catch (Exception ex)
+        {
+            Message = $"Lỗi khi tắt webcam: {ex.Message}";
+        }
+    }
+
+    private async Task RegisterFace()
+    {
+        try
+        {
+            if (UserId <= 0)
+            {
+                RegisterMessage = "Mã nhân viên không hợp lệ!";
+                return;
+            }
+
+            if (module == null)
+            {
+                RegisterMessage = "Không thể khởi tạo JavaScript module!";
+                return;
+            }
+
+            IsRegistering = true;
+            RegisterMessage = "Đang chuẩn bị tự động chụp 20 hình ảnh...";
+            StateHasChanged();
+
+            // Đợi 3 giây để người dùng chuẩn bị
+            await Task.Delay(3000);
+            RegisterMessage = "Đang tự động chụp 20 hình ảnh...";
+            StateHasChanged();
+
+            List<string> imageBase64List = new List<string>();
+
+            // Tự động chụp 5 hình ảnh từ webcam
+            for (int i = 0; i < 20; i++)
+            {
+                try
+                {
+                    RegisterMessage = $"Đang chụp hình ảnh {i + 1}/20...";
+                    StateHasChanged();
+                    var imageBase64 = await module.InvokeAsync<string>("captureFrame");
+                    if (string.IsNullOrEmpty(imageBase64))
+                    {
+                        RegisterMessage = $"Không thể chụp khung hình từ webcam tại lần {i + 1}!";
+                        IsRegistering = false;
+                        return;
+                    }
+                    imageBase64List.Add(imageBase64);
+                    await Task.Delay(500);
+                }
+                catch (Exception ex)
+                {
+                    RegisterMessage = $"Lỗi khi chụp hình ảnh tại lần {i + 1}: {ex.Message}";
+                    IsRegistering = false;
+                    return;
+                }
+            }
+
+            RegisterMessage = "Đang lưu hình ảnh và đăng ký...";
+            StateHasChanged();
+
+            // Gọi FaceIdService để đăng ký khuôn mặt
+            string result = await FaceIdService.RegisterFace(UserId, imageBase64List);
+            RegisterMessage = result;
+
+            // Reset UserId sau khi đăng ký thành công
+            if (result == "Đăng ký khuôn mặt thành công!")
+            {
+                UserId = 0;
+            }
+        }
+        catch (TaskCanceledException tce)
+        {
+            RegisterMessage = $"Tác vụ bị hủy: {tce.Message}";
+        }
+        catch (Exception ex)
+        {
+            RegisterMessage = $"Lỗi khi đăng ký khuôn mặt: {ex.Message}";
+        }
+        finally
+        {
+            IsRegistering = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartRecognition()
+    {
+        try
+        {
+            if (module == null)
+            {
+                Message = "Không thể khởi tạo JavaScript module!";
+                return;
+            }
+
+            IsRecognizing = true;
+            Message = "Đang nhận diện khuôn mặt...";
+
+            // Lấy danh sách nhân viên đã đăng ký FaceId
+            var faceIds = await FaceIdService.GetAllFaceId();
+            if (faceIds == null || !faceIds.Any())
+            {
+                Message = "Không có dữ liệu FaceId nào để nhận diện!";
+                IsRecognizing = false;
+                return;
+            }
+
+            // Vòng lặp nhận diện liên tục cho đến khi người dùng nhấn "Dừng nhận diện"
+            while (IsRecognizing)
+            {
+                // Chụp khung hình từ webcam và chuyển thành base64
+                var imageBase64 = await module.InvokeAsync<string>("captureFrame");
+
+                if (string.IsNullOrEmpty(imageBase64))
+                {
+                    Message = "Không thể chụp khung hình từ webcam!";
+                    await module.InvokeVoidAsync("setRecognizedName", "");
+                    RecognizedEmployee = null;
+                    await Task.Delay(1000);
+                    continue;
+                }
+
+                // Chuyển base64 thành byte[]
+                byte[] faceImage = Convert.FromBase64String(imageBase64);
+
+                // Gọi DetectFace để kiểm tra xem có khuôn mặt không
+                bool hasFace = await FaceIdService.DetectFace(faceImage);
+                if (!hasFace)
+                {
+                    Message = "Không tìm thấy khuôn mặt trong khung hình!";
+                    await module.InvokeVoidAsync("setRecognizedName", "");
+                    RecognizedEmployee = null;
+                    await Task.Delay(1000);
+                    continue;
+                }
+
+                // Thử nhận diện với từng nhân viên trong danh sách FaceIds
+                    bool recognized = false;
+                    foreach (var faceId in faceIds)
+                    {
+                        bool isMatch = await FaceIdService.VerifyFace(faceId.PsnPrkID, faceImage);
+                        if (isMatch)
+                        {
+                            RecognizedEmployee = new EmployeeResult
+                                {
+                                    PsnPrkID = faceId.PsnPrkID,
+                                    PsnName = faceId.PsnName
+                                };
+                            Message = "Nhận diện thành công!";
+                            Console.WriteLine($"Gửi tên nhân viên về JavaScript: {RecognizedEmployee.PsnName}");
+                            await module.InvokeVoidAsync("setRecognizedName", RecognizedEmployee.PsnName);
+                            recognized = true;
+                            break;
+                        }
+                    }
+
+                if (!recognized)
+                {
+                    Message = "Không nhận diện được nhân viên!";
+                    await module.InvokeVoidAsync("setRecognizedName", "");
+                    RecognizedEmployee = null;
+                }
+
+                // Đợi 1 giây trước khi nhận diện lần tiếp theo
+                await Task.Delay(1000);
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Message = $"Lỗi khi nhận diện: {ex.Message}";
+            IsRecognizing = false;
+            await module.InvokeVoidAsync("setRecognizedName", "");
+            RecognizedEmployee = null;
+        }
+    }
+
+    private async Task PauseRecognition()
+    {
+        IsRecognizing = false;
+        Message = "Đã dừng nhận diện.";
+        RecognizedEmployee = null;
+        if (module != null)
+        {
+            await module.InvokeVoidAsync("setRecognizedName", "");
+        }
+        StateHasChanged();
+    }
+
+    public class EmployeeResult
+    {
+        public decimal PsnPrkID { get; set; }
+        public string PsnName { get; set; }
+    }
+
+    public void Dispose()
+    {
+        if (!IsWebcamOff)
+        {
+            StopWebcam().GetAwaiter().GetResult();
+        }
+    }
+}

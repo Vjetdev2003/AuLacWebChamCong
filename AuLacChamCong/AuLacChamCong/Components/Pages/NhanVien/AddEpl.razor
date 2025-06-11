@@ -1,0 +1,137 @@
+﻿@page "/add-employee/{id:int?}"
+
+<PageTitle>@((newEmployee.PsnPrkID == 0) ? "Thêm Nhân Viên" : "Chỉnh Sửa Nhân Viên")</PageTitle>
+@using AuLacChamCong.Models.Shared
+@using AuLacChamCong.Services.Modules.NhanVien
+@using AuLacChamCong.Services.TinhCong
+@inject NavigationManager Navigation
+@inject ITinhCongService _tinhCongServices
+@inject INhanVien _nhanVien
+@rendermode InteractiveServer
+
+
+<h3 class="text-xl font-semibold text-center mb-4">
+    @(newEmployee.PsnPrkID == 0 ? "Thêm Nhân Viên" : "Chỉnh Sửa Nhân Viên")
+</h3>
+
+<div class="mb-4">
+    <div class="mb-3">
+        <label for="PsnName" class="form-label">Họ Tên</label>
+        <input type="text" class="form-control" id="PsnName" @bind="newEmployee.PsnName" placeholder="Nhập họ tên" />
+    </div>
+
+    <div class="mb-3">
+        <label for="PsnPhone" class="form-label">Số Điện Thoại</label>
+        <input type="text" class="form-control" id="PsnPhone" @bind="newEmployee.PsnPhone" placeholder="Nhập số điện thoại" />
+    </div>
+    <div class="mb-3">
+        <label for="PsnAddr" class="form-label">Địa chỉ</label>
+        <input type="text" class="form-control" id="PsnAddr" @bind="newEmployee.PsnAddr" placeholder="Nhập số địa chỉ" />
+    </div>
+    <div class="mb-3">
+        <label for="PsnEmail" class="form-label">Email</label>
+        <input type="email" class="form-control" id="PsnEmail" @bind="newEmployee.PsnEmail" placeholder="Nhập email" />
+    </div>
+
+    <div class="mb-3">
+        <label for="Chucvu" class="form-label">Chức Vụ</label>
+        <input type="text" class="form-control" id="Chucvu" @bind="newEmployee.Chucvu" placeholder="Nhập chức vụ" />
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mt-4">
+        <button type="button" class="btn btn-primary" @onclick="async () => await SaveEmployee()">
+            @(newEmployee.PsnPrkID == 0 ? "Thêm Nhân Viên" : "Lưu Thay Đổi")
+        </button>
+        <button type="button" class="btn btn-secondary" @onclick="BackToEmployeeList">
+            Quay Lại
+        </button>
+    </div>
+</div>
+@code {
+    private PersonnelsDb newEmployee = new PersonnelsDb();
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private string errorMessage = string.Empty;
+    [Parameter]
+    public int? id { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Nếu có ID, tải dữ liệu nhân viên để chỉnh sửa
+        if (id.HasValue && id.Value > 0)
+        {
+            newEmployee = await _tinhCongServices.GetEmployeeByIdAsync(id.Value);
+        }
+    }
+    private void BackToEmployeeList()
+    {
+        Navigation.NavigateTo("/quanLyNhanVien");
+    }
+
+    public async Task SaveEmployee()
+    {
+        try
+        {
+            isSubmitting = true;
+            StateHasChanged();
+
+            if (string.IsNullOrWhiteSpace(newEmployee.PsnName) ||
+                string.IsNullOrWhiteSpace(newEmployee.PsnPhone) ||
+                string.IsNullOrWhiteSpace(newEmployee.PsnEmail))
+            {
+                errorMessage = "Vui lòng nhập đầy đủ thông tin (Họ Tên, Số Điện Thoại, Email)";
+                return;
+            }
+
+            bool success;
+            if (newEmployee.PsnPrkID == 0)
+            {
+                newEmployee.PsnID = GeneratePsnID(newEmployee.PsnName);
+                success = await _nhanVien.CreateNhanVien(newEmployee);
+            }
+            else
+            {
+                success = await _nhanVien.UpdateNhanVien(newEmployee);
+            }
+
+            if (success)
+            {
+                Navigation.NavigateTo("/NhanVien");
+            }
+            else
+            {
+                errorMessage = "Không thể lưu nhân viên. Vui lòng thử lại!";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Lỗi khi lưu nhân viên: {ex.Message}";
+            Console.WriteLine($"Error in SaveEmployee: {ex.Message}");
+        }
+        finally
+        {
+            isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+    private string GeneratePsnID(string psnName)
+    {
+        // Logic tạo PsnID dựa trên PsnName
+        if (string.IsNullOrWhiteSpace(psnName))
+            return "Unknown01";
+
+        // Lấy chữ cái đầu của họ và tên cuối
+        var nameParts = psnName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string prefix = nameParts.Length > 1
+            ? $"{nameParts[0][0]}{nameParts[^1][0]}"
+            : $"{nameParts[0][0]}";
+
+        // Tạo số thứ tự (tạm thời hardcoded, cần kiểm tra DB để tránh trùng)
+        string number = "";
+        if (psnName == "Trần Công Chính") number = "01";
+        else if (psnName == "Nguyễn Văn Trình") number = "03";
+        else number = "99"; // Giá trị mặc định nếu không khớp
+
+        return $"{prefix}{number}";
+    }
+}

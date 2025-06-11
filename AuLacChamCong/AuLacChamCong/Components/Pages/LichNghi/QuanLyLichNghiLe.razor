@@ -1,0 +1,258 @@
+﻿@page "/dsLichNghiLe"
+@using AuLacChamCong.Services.Modules.LichNghi.Model
+@using AuLacChamCong.Services.Modules.LichNghi.Service
+@inject ILichNghiServices _lichNghiService
+@rendermode InteractiveServer
+
+<PageTitle>Danh Sách Ngày Lễ</PageTitle>
+
+<h3>Danh Sách Ngày Lễ</h3>
+
+<!-- Filters -->
+<div class="row mb-3">
+    <div class="col-auto d-flex align-items-center">
+        <label for="month" class="me-2">Tháng:</label>
+        <InputNumber id="month" @bind-Value="selectedMonth" class="form-control w-auto me-3" min="1" max="12" />
+    </div>
+    <div class="col-auto d-flex align-items-center">
+        <label for="year" class="me-2">Năm:</label>
+        <InputNumber id="year" @bind-Value="selectedYear" class="form-control w-auto me-3" min="1900" max="9999" />
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary me-2" @onclick="LoadHolidays">Tải danh sách</button>
+        <button class="btn btn-success" @onclick="ShowAddForm">Thêm mới</button>
+    </div>
+</div>
+
+<!-- Error/Success Message -->
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">@errorMessage</div>
+}
+@if (!string.IsNullOrEmpty(successMessage))
+{
+    <div class="alert alert-success" role="alert">@successMessage</div>
+}
+<!-- Add/Edit Form -->
+@if (showForm)
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5>@(isEditMode ? "Sửa Ngày Lễ" : "Thêm Ngày Lễ")</h5>
+            <EditForm Model="newHoliday" OnValidSubmit="SaveHoliday">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <label>Ngày Lễ:</label>
+                    <InputDate @bind-Value="newHoliday.HolidayDate" class="form-control" />
+                    <ValidationMessage For="() => newHoliday.HolidayDate" />
+                </div>
+                <div class="mb-3">
+                    <label>Tên Ngày Lễ:</label>
+                    <InputText @bind-Value="newHoliday.HolidayName" class="form-control" />
+                    <ValidationMessage For="() => newHoliday.HolidayName" />
+                </div>
+                <div class="mb-3">
+                    <label>Mô Tả:</label>
+                    <InputText @bind-Value="newHoliday.Description" class="form-control" />
+                </div>
+                <div class="mb-3">
+                    <label>Năm:</label>
+                    <InputNumber @bind-Value="newHoliday.Year" class="form-control" />
+                    <ValidationMessage For="() => newHoliday.Year" />
+                </div>
+                <button type="submit" class="btn btn-primary me-2" disabled="@isSubmitting">
+                    @(isSubmitting ? "Đang lưu..." : "Lưu")
+                </button>
+                <button type="button" class="btn btn-secondary" @onclick="CancelForm">Hủy</button>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<!-- Holiday List -->
+@if (isLoading)
+{
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+}
+else if (holidays != null && holidays.Any())
+{
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>STT</th>
+                <th>ID Ngày Lễ</th>
+                <th>Ngày Lễ</th>
+                <th>Tên Ngày Lễ</th>
+                <th>Mô Tả</th>
+                <th>Năm</th>
+                <th>Thao Tác</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var (holiday, index) in holidays.Select((h, i) => (h, i)))
+            {
+                <tr>
+                    <td>@(index + 1)</td>
+                    <td>@holiday.HolidayId</td>
+                    <td>@holiday.HolidayDate.ToString("dd/MM/yyyy")</td>
+                    <td>@holiday.HolidayName</td>
+                    <td>@holiday.Description</td>
+                    <td>@holiday.Year</td>
+                    <td>
+                        <button class="btn btn-warning btn-sm me-2" @onclick="() => EditHoliday(holiday)">Sửa</button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => DeleteHoliday(holiday.HolidayId)">Xóa</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>Không có ngày lễ nào trong tháng @selectedMonth năm @selectedYear.</p>
+}
+
+@code {
+    private int? selectedMonth = DateTime.Now.Month;
+    private int? selectedYear = DateTime.Now.Year;
+    private List<NghiLeDb> holidays = new();
+    private NghiLeDb newHoliday = new();
+    private bool isLoading = false;
+    private bool isSubmitting = false;
+    private bool showForm = false;
+    private bool isEditMode = false;
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHolidays();
+    }
+
+    private async Task LoadHolidays()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            holidays = await _lichNghiService.GetHolidaysAsync(selectedMonth, selectedYear);
+            if (holidays == null || !holidays.Any())
+            {
+                errorMessage = $"Không tìm thấy ngày lễ nào trong tháng {selectedMonth}/{selectedYear}.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Lỗi khi tải danh sách ngày lễ: {ex.Message}";
+            holidays = new List<NghiLeDb>();
+            Console.WriteLine($"[ERROR] LoadHolidays: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowAddForm()
+    {
+        newHoliday = new NghiLeDb
+            {
+                HolidayDate = DateTime.Now,
+                Year = DateTime.Now.Year
+            };
+        showForm = true;
+        isEditMode = false;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+    }
+
+    private void EditHoliday(NghiLeDb holiday)
+    {
+        newHoliday = new NghiLeDb
+            {
+                HolidayId = holiday.HolidayId,
+                HolidayDate = holiday.HolidayDate,
+                HolidayName = holiday.HolidayName,
+                Description = holiday.Description,
+                Year = holiday.Year
+            };
+        showForm = true;
+        isEditMode = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+    }
+
+    private async Task SaveHoliday()
+    {
+        isSubmitting = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            if (isEditMode)
+            {
+                await _lichNghiService.UpdateHolidayAsync(newHoliday);
+                successMessage = "Cập nhật ngày lễ thành công!";
+            }
+            else
+            {
+                await _lichNghiService.AddHolidayAsync(newHoliday);
+                successMessage = "Thêm ngày lễ thành công!";
+            }
+            await LoadHolidays(); // Tải lại danh sách
+            showForm = false;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Lỗi khi lưu ngày lễ: {ex.Message}";
+            Console.WriteLine($"[ERROR] SaveHoliday: {ex.Message}");
+        }
+        finally
+        {
+            isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteHoliday(int holidayId)
+    {
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            await _lichNghiService.DeleteHolidayAsync(holidayId);
+            successMessage = "Xóa ngày lễ thành công!";
+            await LoadHolidays();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Lỗi khi xóa ngày lễ: {ex.Message}";
+            Console.WriteLine($"[ERROR] DeleteHoliday: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CancelForm()
+    {
+        showForm = false;
+        newHoliday = new NghiLeDb();
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+    }
+}

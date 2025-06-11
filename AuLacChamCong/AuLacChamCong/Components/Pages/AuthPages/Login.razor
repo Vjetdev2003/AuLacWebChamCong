@@ -1,0 +1,130 @@
+﻿@page "/"
+@page "/loginpage"
+@layout EmptyLayout
+@using AuLacChamCong.Models.Layout
+@using AuLacChamCong.Models.ViewModel
+@using AuLacChamCong.Services.Modules.User.Model
+@using AuLacChamCong.Services.Modules.User.Service
+@inject NavigationManager Navigation
+@inject HttpClient HttpClient
+@inject TokenService _tokenService
+@inject Login_Services _loginServices
+@rendermode InteractiveServer
+<PageTitle>Đăng Nhập</PageTitle>
+
+<div class="container d-flex justify-content-center align-items-center" style="min-height: 100vh;">
+    <div class="col-12 col-md-6 col-lg-4 bg-white shadow p-4 rounded">
+        <div class="text-center mb-4">
+            <img src="images/logo.jpg" class="img-fluid mb-3" alt="Logo" style="max-width: 150px;">
+            <h3 class="fw-bold">Đăng Nhập</h3>
+        </div>
+
+        <EditForm Model="loginRequest" OnValidSubmit="HandleLogin">
+            <DataAnnotationsValidator />
+
+            <div class="mb-3">
+                <label for="userId" class="form-label">Tài Khoản</label>
+                <InputText id="userId" @bind-Value="loginRequest.UserID" class="form-control" />
+                <ValidationMessage For="() => loginRequest.UserID" />
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Mật khẩu</label>
+                <InputText id="password" type="password" @bind-Value="loginRequest.UserPassword" class="form-control" />
+                <ValidationMessage For="() => loginRequest.UserPassword" />
+            </div>
+            @*
+            <div class="d-flex justify-content-between mb-3">
+                <NavLink href="ForgotPassword" class="text-muted fs-14">
+                    Quên mật khẩu?
+                </NavLink>
+                <NavLink href="Register" class="text-muted fs-14">
+                    Đăng ký tài khoản
+                </NavLink>
+            </div>
+            *@
+            <button type="submit" class="btn btn-primary w-100 mt-3" disabled="@isSubmitting">
+                @if (isSubmitting)
+                {
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    <span> Đang đăng nhập...</span>
+                }
+                else
+                {
+                    <span>Đăng Nhập</span>
+                }
+            </button>
+        </EditForm>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-3">@errorMessage</div>
+        }
+
+        @if (!string.IsNullOrEmpty(successMessage))
+        {
+            <div class="alert alert-success mt-3">@successMessage</div>
+        }
+    </div>
+</div>
+
+@code {
+    private LoginRequest loginRequest = new LoginRequest();
+    private string successMessage;
+    private string errorMessage;
+    private bool isSubmitting = false;
+
+    private async Task HandleLogin()
+    {
+        try
+        {
+            // Reset messages
+            errorMessage = null;
+            successMessage = null;
+            isSubmitting = true;
+
+            // Validate input
+            if (string.IsNullOrEmpty(loginRequest.UserID) || string.IsNullOrEmpty(loginRequest.UserPassword))
+            {
+                errorMessage = "Vui lòng nhập tài khoản và mật khẩu.";
+                isSubmitting = false;
+                return;
+            }
+
+            // Call the login service to authenticate and get the response (user and token)
+            var loginResponse = await _loginServices.Login(loginRequest.UserID, loginRequest.UserPassword);
+
+            if (loginResponse != null)
+            {
+                // Extract token from response (from the anonymous object)
+                var token = loginResponse.GetType().GetProperty("Token")?.GetValue(loginResponse, null)?.ToString();
+
+                if (!string.IsNullOrEmpty(token))
+                {
+                    // Store the token in localStorage after successful login
+                    await _tokenService.StoreToken(token);
+
+                    successMessage = "Đăng nhập thành công!";
+                    Navigation.NavigateTo("/home");  // Redirect to home page after successful login
+                }
+                else
+                {
+                    errorMessage = "Không thể tạo token sau khi đăng nhập.";
+                }
+            }
+            else
+            {
+                errorMessage = "Tài khoản hoặc mật khẩu không đúng.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Lỗi khi đăng nhập: {ex.Message}";
+            Console.WriteLine($"Exception: {ex}");
+        }
+        finally
+        {
+            isSubmitting = false; // Reset the submit state
+        }
+    }
+}

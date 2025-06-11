@@ -1,0 +1,22 @@
+﻿<!DOCTYPE html>
+<html>
+<body>
+    <input type="file" id="imageInput" accept="image/jpeg">
+    <textarea id="base64Output" rows="10" cols="50"></textarea>
+    <script>
+        document.getElementById('imageInput').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            const base64String = await convertImageToBase64(file);
+            document.getElementById('base64Output').value = base64String;
+        });
+
+        function convertImageToBase64(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                reader.readAsDataURL(file);
+            });
+        }
+    </script>
+</body>
+</html>

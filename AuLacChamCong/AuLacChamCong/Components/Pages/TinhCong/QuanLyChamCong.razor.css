@@ -1,0 +1,22 @@
+﻿/*.attendance-table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+    .attendance-table th, .attendance-table td {
+        border: 1px solid #ddd;
+        padding: 5px;
+        text-align: center;
+    }
+
+    .attendance-table th {
+        background-color: #f2f2f2;
+    }
+
+.filters label {
+    font-weight: bold;
+}
+*/
+body{
+
+}

@@ -1,0 +1,768 @@
+﻿@page "/DonCongTac"
+
+<PageTitle>Đơn Công Tác</PageTitle>
+@using AuLacChamCong.Models.Shared
+@using AuLacChamCong.Models.Shared.ModelSearch
+@using AuLacChamCong.Models.ViewModel
+@using AuLacChamCong.Services.Modules.BenhVien.Model
+@using AuLacChamCong.Services.Modules.BenhVien.Service
+@using AuLacChamCong.Services.Modules.DonCongTac.Model
+@using AuLacChamCong.Services.Modules.DonCongTac.Service
+@using AuLacChamCong.Services.TinhCong
+@inject NavigationManager Navigation
+@inject ITinhCongService _tinhCongServices
+@inject IDonCongTacServices _donCongTacService
+@inject IHospitalServices MngHospitalService
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<h3 class="text-xl font-semibold text-center mb-4">Quản Lý Đơn Công Tác</h3>
+
+<!-- Lịch Công Tác Section -->
+<h3>Lịch Công Tác</h3>
+<div>
+    <!-- Row for Filters -->
+    <div class="row mb-3 align-items-end">
+        <div class="col-md-2 col-sm-6">
+            <label class="mb-1">Từ ngày:</label>
+            <input type="text" class="form-control text-center date-pk" data-inputmask-inputformat="dd/mm/yyyy" @bind="timeFrom" @bind:after="FilterByDate" />
+        </div>
+
+        <div class="col-md-2 col-sm-6">
+            <label class="mb-1">Đến ngày:</label>
+            <input type="text" class="form-control text-center date-pk" data-inputmask-inputformat="dd/mm/yyyy" @bind="timeTo" @bind:after="FilterByDate" />
+        </div>
+
+        <div class="col-md-2 col-sm-6">
+            <label class="mb-1">Nhân Viên:</label>
+            <select class="form-select" required @bind="NhanVienId" @bind:after="FilterByEmployee">
+                <option value="0">Chọn Nhân Viên</option>
+                @foreach (var item in DsNhanVien)
+                {
+                    <option value="@item.PsnPrkID">@item.PsnName</option>
+                }
+            </select>
+        </div>
+
+        <div class="col-md-4 col-sm-6">
+            <label class="mb-1">Tìm kiếm:</label>
+            <div class="input-group">
+                <input type="text" class="form-control search-input" placeholder="Tìm kiếm theo tên nhân viên hoặc nơi công tác" @bind="searchTerm" @bind:event="oninput" />
+                <button class="btn btn-info search-btn" @onclick="SearchWorkRequests">
+                    Tìm kiếm
+                </button>
+            </div>
+        </div>
+
+        <div class="col-md-2 col-sm-12 d-flex justify-content-end">
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#exampleModal" @onclick="HandleClick">Thêm mới</button>
+        </div>
+    </div>
+</div>
+
+<!-- Work Request List Section -->
+@if (isLoading)
+{
+    <div class="text-center">Đang tải dữ liệu...</div>
+}
+else if (filteredWorkRequests == null)
+{
+    <div class="text-center">Đang tải dữ liệu...</div>
+}
+else if (!filteredWorkRequests.Any())
+{
+    <div class="text-center">Không có đơn công tác nào.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead class="table-dark">
+                <tr>
+                    <th>Ngày Công Tác</th>
+                    <th>Thời Gian Bắt Đầu</th>
+                    <th>Thời Gian Kết Thúc</th>
+                    <th>Nhân Viên</th>
+                    <th>Nơi Công Tác</th>
+                    <th>Lý Do</th>
+                    <th>Trạng Thái</th>
+                    <th>Hành Động</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var request in paginatedWorkRequests)
+                {
+                    <tr>
+                        <td>@request.NgayCongTac.ToString("dd/MM/yyyy")</td>
+                        <td>@(request.ThoiGianBatDau?.ToString("dd/MM HH:mm") ?? "N/A")</td>
+                        <td>@(request.ThoiGianKetThuc?.ToString("dd/MM HH:mm") ?? "N/A")</td>
+                        <td>@(DsNhanVien.FirstOrDefault(p => p.PsnPrkID == request.PsnPrkID)?.PsnName ?? "N/A")</td>
+                        <td>@request.NoiCongTac</td>
+                        <td>@request.LyDo</td>
+                        <td>@request.StatusDescription</td>
+                        <td>
+                            @if (request.Status == 0) // Chỉ hiển thị nút nếu trạng thái là "Chờ phê duyệt"
+                            {
+                                <button class="btn btn-success btn-sm me-2" @onclick="() => ShowConfirmModal(request, true)">
+                                    Xác nhận
+                                </button>
+                                <button class="btn btn-danger btn-sm" @onclick="() => ShowConfirmModal(request, false)">
+                                    Từ chối
+                                </button>
+                            }
+                            else
+                            {
+                                <span>Đã xử lý</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Simplified Pagination Controls -->
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <div>
+            <label for="pageSize" class="me-2">Số mục:</label>
+            <InputSelect @bind-Value="pageSize" id="pageSize" class="form-control w-auto d-inline-block" @onchange="ChangePageSize">
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+            </InputSelect>
+        </div>
+        <div>
+            <button class="btn btn-outline-primary me-2" @onclick="PreviousPage" disabled="@(currentPage == 1)">Trước</button>
+            <span>Trang @currentPage / @totalPages</span>
+            <button class="btn btn-outline-primary ms-2" @onclick="NextPage" disabled="@(currentPage == totalPages)">Sau</button>
+        </div>
+    </div>
+}
+
+<!-- History Section -->
+<h3 class="mt-5">Lịch Sử Đơn Công Tác</h3>
+<div class="d-flex justify-content-end mb-3">
+    <button class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#historyModal" @onclick="ViewHistory">Xem Lịch Sử</button>
+    <button class="btn btn-secondary" @onclick="NavigateToHistoryPage">Xem Tất Cả Lịch Sử</button>
+</div>
+
+<!-- Bootstrap Modal for Adding Work Request -->
+<div class="modal fade" id="exampleModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalLabel">Thêm Đơn Công Tác</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Từ ngày:</label>
+                    <input type="text" class="form-control date-pk" data-inputmask-inputformat="dd/mm/yyyy" @bind="timeFrom" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Đến ngày:</label>
+                    <input type="text" class="form-control date-pk" data-inputmask-inputformat="dd/mm/yyyy" @bind="timeTo" />
+                </div>
+               @*  <div class="mb-3">
+                    <label class="form-label">Khoa:</label>
+                    <select class="form-select" @bind="KhoaId">
+                        <option value="0">Chọn Khoa</option>
+                        @foreach (var item in DsKhoa)
+                        {
+                            <option value="@item.DeptPrkID">@item.DeptName</option>
+                        }
+                    </select>
+                </div> *@
+                <div class="mb-3">
+                    <label class="form-label">Nhân Viên:</label>
+                    <select class="form-select" @bind="NhanVienId" @bind:after="FilterByEmployee">
+                        <option value="0">Chọn Nhân Viên</option>
+                        @foreach (var item in DsNhanVien)
+                        {
+                            <option value="@item.PsnPrkID">@item.PsnName</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-3 position-relative">
+                    <label class="form-label">Nơi Công Tác:</label>
+                    <input type="text" class="form-control" placeholder="Nhập tên bệnh viện để tìm kiếm"
+                           @bind="hospitalSearchTerm" @bind:event="oninput" @onfocus="ShowSuggestions" @onblur="HideSuggestionsAfterDelay" />
+                    @if (showSuggestions && filteredHospitals.Any())
+                    {
+                        <ul class="list-group position-absolute w-100" style="z-index: 1000; max-height: 200px; overflow-y: auto;">
+                            @foreach (var hospital in filteredHospitals)
+                            {
+                                <li class="list-group-item list-group-item-action"
+                                    @onclick="() => SelectHospital(hospital)"
+                                    @onmouseover="() => hospitalSearchTerm = hospital.HospitalName">
+                                    @hospital.HospitalName
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+             @*    <div class="mb-3">
+                    <label class="form-label">Nơi Công Tác:</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" @bind="noiCongTac" readonly />
+                        <button class="btn btn-info" @onclick="ScanLocation">Quét vị trí bệnh viện</button>
+                    </div>
+                </div> *@
+                <div class="mb-3">
+                    <label class="form-label">Lý Do:</label>
+                    <input type="text" class="form-control" @bind="lyDo" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="button" class="btn btn-primary" @onclick="SaveWorkRequest">Lưu</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bootstrap Modal for Viewing History -->
+<div class="modal fade" id="historyModal" tabindex="-1" aria-labelledby="historyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="historyModalLabel">Lịch Sử Đơn Công Tác</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                @if (isLoadingHistory)
+                {
+                    <div class="text-center">Đang tải lịch sử...</div>
+                }
+                else if (filteredHistory == null || !filteredHistory.Any())
+                {
+                    <div class="alert alert-info">Không có lịch sử đơn công tác nào.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-striped table-bordered">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID Đơn</th>
+                                    <th>Tên Nhân Viên</th>
+                                    <th>Ngày Công Tác</th>
+                                    <th>Nơi Công Tác</th>
+                                    <th>Lý Do</th>
+                                    <th>Trạng Thái</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var don in filteredHistory)
+                                {
+                                    <tr>
+                                        <td>@don.MngDonCongTacPrkID</td>
+                                        <td>@(don.Personnels?.PsnName ?? DsNhanVien.FirstOrDefault(p => p.PsnPrkID == don.PsnPrkID)?.PsnName ?? "N/A")</td>
+                                        <td>@don.NgayCongTac.ToString("dd/MM/yyyy")</td>
+                                        <td>@don.NoiCongTac</td>
+                                        <td>@don.LyDo</td>
+                                        <td>
+                                            @if (don.Status == 1)
+                                            {
+                                                <span class="badge bg-success">Đã xác nhận</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger">Đã từ chối</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bootstrap Modal for Confirmation -->
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmModalLabel">Xác nhận hành động</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Bạn có chắc chắn muốn @(isConfirmAction ? "xác nhận" : "từ chối") đơn công tác của nhân viên @(DsNhanVien.FirstOrDefault(p => p.PsnPrkID == selectedDCT?.PsnPrkID)?.PsnName ?? "N/A") vào ngày @selectedDCT?.NgayCongTac.ToString("dd/MM/yyyy") tại @selectedDCT?.NoiCongTac không?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn @(isConfirmAction ? "btn-success" : "btn-danger")" @onclick="ConfirmAction">Xác nhận</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    // Properties for Lịch Công Tác
+    private string timeFrom = DateTime.Now.AddDays(-30).ToString("dd/MM/yyyy");
+    private string timeTo = DateTime.Now.ToString("dd/MM/yyyy");
+    private int KhoaId { get; set; }
+    private int NhanVienId { get; set; }
+    private string noiCongTac = string.Empty;
+    private string lyDo = string.Empty;
+    private List<DeptsDb> DsKhoa { get; set; } = new();
+    private List<PersonnelsDb> DsNhanVien { get; set; } = new();
+
+    // Properties for Hospital Autocomplete
+    private List<HospitalDb> hospitals = new();
+    private List<HospitalDb> filteredHospitals = new();
+    private HospitalDb selectedHospital;
+    private string hospitalSearchTerm = string.Empty;
+    private int? hospitalId;
+    private bool showSuggestions = false;
+
+    // Properties for Work Request List
+    private List<DonCongTacDb> workRequests;
+    private List<DonCongTacDb> filteredWorkRequests;
+    private List<DonCongTacDb> paginatedWorkRequests;
+    private string searchTerm = string.Empty;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalPages;
+    private bool isLoading = false;
+    private bool isConfirmAction;
+    private DonCongTacDb selectedDCT;
+
+    // Properties for History
+    private List<DonCongTacDb> historyItems;
+    private List<DonCongTacDb> filteredHistory;
+    private bool isLoadingHistory = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            isLoading = true;
+            isLoadingHistory = true;
+
+            // Load data for Lịch Công Tác
+            DsKhoa = await _tinhCongServices.GetDepartmentsAsync();
+            DsNhanVien = _tinhCongServices.getsNhanVien().ToList();
+            hospitals = await MngHospitalService.GetAllHospitalsAsync();
+            filteredHospitals = hospitals;
+
+            // Load data for Work Request List
+            workRequests = await _donCongTacService.GetAllDonCongTacAsync();
+            Console.WriteLine($"Loaded {workRequests.Count} work requests");
+
+            // Load history data
+            historyItems = await _donCongTacService.GetHistoryDonCongTac();
+            Console.WriteLine($"Loaded {historyItems.Count} history items");
+
+            FilterAndPaginateWorkRequests();
+            FilterHistory();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            isLoadingHistory = false;
+            StateHasChanged();
+        }
+    }
+
+    private (DateTime? FromDate, DateTime? ToDate) ParseDateRange()
+    {
+        DateTime? fromDate = null;
+        DateTime? toDate = null;
+
+        if (!string.IsNullOrWhiteSpace(timeFrom) &&
+            DateTime.TryParseExact(timeFrom, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime parsedFromDate))
+        {
+            fromDate = parsedFromDate;
+        }
+
+        if (!string.IsNullOrWhiteSpace(timeTo) &&
+            DateTime.TryParseExact(timeTo, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime parsedToDate))
+        {
+            toDate = parsedToDate;
+        }
+
+        if (fromDate.HasValue && toDate.HasValue && fromDate > toDate)
+        {
+            var temp = fromDate;
+            fromDate = toDate;
+            toDate = temp;
+
+            timeFrom = fromDate.Value.ToString("dd/MM/yyyy");
+            timeTo = toDate.Value.ToString("dd/MM/yyyy");
+        }
+
+        return (fromDate, toDate);
+    }
+
+    private void FilterAndPaginateWorkRequests()
+    {
+        var tempFiltered = workRequests;
+
+        var (fromDate, toDate) = ParseDateRange();
+
+        if (fromDate.HasValue && toDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(r => r.NgayCongTac.Date >= fromDate.Value.Date && r.NgayCongTac.Date <= toDate.Value.Date)
+                .ToList();
+        }
+        else if (fromDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(r => r.NgayCongTac.Date >= fromDate.Value.Date)
+                .ToList();
+        }
+        else if (toDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(r => r.NgayCongTac.Date <= toDate.Value.Date)
+                .ToList();
+        }
+
+        if (NhanVienId != 0)
+        {
+            tempFiltered = tempFiltered
+                .Where(r => r.PsnPrkID == NhanVienId)
+                .ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            tempFiltered = tempFiltered
+                .Where(r => (DsNhanVien.FirstOrDefault(p => p.PsnPrkID == r.PsnPrkID)?.PsnName?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (r.NoiCongTac?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false))
+                .ToList();
+        }
+
+        filteredWorkRequests = tempFiltered;
+
+        totalPages = (int)Math.Ceiling((double)filteredWorkRequests.Count / pageSize);
+
+        if (currentPage < 1) currentPage = 1;
+        if (currentPage > totalPages) currentPage = totalPages > 0 ? totalPages : 1;
+
+        paginatedWorkRequests = filteredWorkRequests
+            .Skip((currentPage - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        StateHasChanged();
+    }
+
+    private void FilterHistory()
+    {
+        var tempFiltered = historyItems;
+
+        var (fromDate, toDate) = ParseDateRange();
+
+        if (fromDate.HasValue && toDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(h => h.NgayCongTac.Date >= fromDate.Value.Date && h.NgayCongTac.Date <= toDate.Value.Date)
+                .ToList();
+        }
+        else if (fromDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(h => h.NgayCongTac.Date >= fromDate.Value.Date)
+                .ToList();
+        }
+        else if (toDate.HasValue)
+        {
+            tempFiltered = tempFiltered
+                .Where(h => h.NgayCongTac.Date <= toDate.Value.Date)
+                .ToList();
+        }
+
+        if (NhanVienId != 0)
+        {
+            tempFiltered = tempFiltered
+                .Where(h => h.PsnPrkID == NhanVienId)
+                .ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            tempFiltered = tempFiltered
+                .Where(h => (h.Personnels?.PsnName?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (DsNhanVien.FirstOrDefault(p => p.PsnPrkID == h.PsnPrkID)?.PsnName?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (h.NoiCongTac?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false))
+                .ToList();
+        }
+
+        filteredHistory = tempFiltered;
+        StateHasChanged();
+    }
+
+    private void FilterByDate()
+    {
+        currentPage = 1;
+        FilterAndPaginateWorkRequests();
+        FilterHistory();
+    }
+
+    private void FilterByEmployee()
+    {
+        currentPage = 1;
+        FilterAndPaginateWorkRequests();
+        FilterHistory();
+    }
+
+    private void SearchWorkRequests()
+    {
+        currentPage = 1;
+        FilterAndPaginateWorkRequests();
+        FilterHistory();
+    }
+
+    private void PreviousPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            FilterAndPaginateWorkRequests();
+        }
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            FilterAndPaginateWorkRequests();
+        }
+    }
+
+    private void ChangePageSize(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int newPageSize))
+        {
+            pageSize = newPageSize;
+            currentPage = 1;
+            FilterAndPaginateWorkRequests();
+        }
+    }
+
+    private async Task ShowConfirmModal(DonCongTacDb don, bool confirm)
+    {
+        selectedDCT = don;
+        isConfirmAction = confirm;
+        await JSRuntime.InvokeVoidAsync("showModal", "confirmModal");
+    }
+
+    private async Task ConfirmAction()
+    {
+        if (selectedDCT == null) return;
+
+        try
+        {
+            selectedDCT.Status = isConfirmAction ? 1 : -1;
+            selectedDCT.StatusDescription = isConfirmAction ? "Đã xác nhận" : "Đã từ chối";
+
+            var updatedRequest = new DonCongTacViewModel
+                {
+                    MngDonCongTacPrkID = selectedDCT.MngDonCongTacPrkID,
+                    PsnPrkID = selectedDCT.PsnPrkID,
+                    NgayCongTac = selectedDCT.NgayCongTac,
+                    ThoiGianBatDau = selectedDCT.ThoiGianBatDau,
+                    ThoiGianKetThuc = selectedDCT.ThoiGianKetThuc,
+                    NoiCongTac = selectedDCT.NoiCongTac,
+                    LyDo = selectedDCT.LyDo,
+                    Status = selectedDCT.Status,
+                    StatusDescription = selectedDCT.StatusDescription,
+                    HospitalId = selectedDCT.HospitalId
+                };
+
+            await _donCongTacService.UpdateDonCongTacStatusAsync(updatedRequest.MngDonCongTacPrkID, updatedRequest.Status ?? 0);
+            await _donCongTacService.GetHistoryDonCongTacByPsnPrkIDAsync(selectedDCT.MngDonCongTacPrkID);
+
+            workRequests.Remove(selectedDCT);
+            historyItems = await _donCongTacService.GetHistoryDonCongTac();
+
+            FilterAndPaginateWorkRequests();
+            FilterHistory();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error confirming work request: {ex.Message}");
+        }
+        finally
+        {
+            await JSRuntime.InvokeVoidAsync("hideModal", "confirmModal");
+            selectedDCT = null;
+        }
+    }
+
+    private void HandleClick()
+    {
+        Console.WriteLine($"[DEBUG] Thêm mới clicked: Từ ngày={timeFrom}, Đến ngày={timeTo}, KhoaId={KhoaId}, NhanVienId={NhanVienId}, NoiCongTac={noiCongTac}, LyDo={lyDo}");
+    }
+
+    private void ShowSuggestions()
+    {
+        showSuggestions = true;
+        FilterHospitals();
+        StateHasChanged();
+    }
+
+    private async Task HideSuggestionsAfterDelay()
+    {
+        await Task.Delay(200);
+        showSuggestions = false;
+        StateHasChanged();
+    }
+
+    private void FilterHospitals()
+    {
+        if (string.IsNullOrWhiteSpace(hospitalSearchTerm))
+        {
+            filteredHospitals = hospitals;
+        }
+        else
+        {
+            filteredHospitals = hospitals
+                .Where(h => h.HospitalName.Contains(hospitalSearchTerm, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+        showSuggestions = true;
+        StateHasChanged();
+    }
+
+    private void SelectHospital(HospitalDb hospital)
+    {
+        selectedHospital = hospital;
+        hospitalId = hospital.HospitalId;
+        hospitalSearchTerm = hospital.HospitalName;
+        noiCongTac = hospital.HospitalName;
+        showSuggestions = false;
+        StateHasChanged();
+    }
+
+    private async Task SaveWorkRequest()
+    {
+        Console.WriteLine($"[DEBUG] Saving Work Request: Từ ngày={timeFrom}, Đến ngày={timeTo}, NhanVienId={NhanVienId}, NoiCongTac={noiCongTac}, LyDo={lyDo}, HospitalId={hospitalId}");
+
+        if (string.IsNullOrWhiteSpace(timeFrom) || string.IsNullOrWhiteSpace(timeTo) || NhanVienId == 0 || string.IsNullOrWhiteSpace(noiCongTac) || string.IsNullOrWhiteSpace(lyDo))
+        {
+            Console.WriteLine("[ERROR] Vui lòng điền đầy đủ thông tin!");
+            await JSRuntime.InvokeVoidAsync("alert", "Vui lòng điền đầy đủ thông tin!");
+            return;
+        }
+
+        if (!DateTime.TryParseExact(timeFrom, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime thoiGianBatDau) ||
+            !DateTime.TryParseExact(timeTo, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime thoiGianKetThuc))
+        {
+            Console.WriteLine("[ERROR] Định dạng ngày không hợp lệ!");
+            await JSRuntime.InvokeVoidAsync("alert", "Định dạng ngày không hợp lệ!");
+            return;
+        }
+
+        var newWorkRequest = new DonCongTacViewModel
+            {
+                MngDonCongTacPrkID = 0,
+                PsnPrkID = NhanVienId,
+                NgayCongTac = thoiGianBatDau,
+                ThoiGianBatDau = thoiGianBatDau,
+                ThoiGianKetThuc = thoiGianKetThuc,
+                NoiCongTac = noiCongTac,
+                LyDo = lyDo,
+                Status = 0,
+                StatusDescription = "Chờ phê duyệt",
+                HospitalId = hospitalId
+            };
+
+        await _donCongTacService.SaveDonCongTacAsync(newWorkRequest);
+
+        workRequests = await _donCongTacService.GetAllDonCongTacAsync();
+        FilterAndPaginateWorkRequests();
+
+        timeFrom = DateTime.Now.AddDays(-30).ToString("dd/MM/yyyy");
+        timeTo = DateTime.Now.ToString("dd/MM/yyyy");
+        KhoaId = 0;
+        NhanVienId = 0;
+        noiCongTac = string.Empty;
+        lyDo = string.Empty;
+        hospitalSearchTerm = string.Empty;
+        hospitalId = null;
+        selectedHospital = null;
+        filteredHospitals = hospitals;
+
+        Console.WriteLine("[INFO] Đơn công tác đã được lưu thành công!");
+        await JSRuntime.InvokeVoidAsync("bootstrap.Modal.getInstance", "#exampleModal", "hide");
+        StateHasChanged();
+    }
+
+    private void EditWorkRequest(int mngDonCongTacPrkID)
+    {
+        Console.WriteLine($"[DEBUG] Navigating to Edit Work Request page with ID {mngDonCongTacPrkID}...");
+        Navigation.NavigateTo($"/edit-doncongtac/{mngDonCongTacPrkID}");
+    }
+
+    private void ViewHistory()
+    {
+        FilterHistory();
+        StateHasChanged();
+    }
+
+    private void NavigateToHistoryPage()
+    {
+        Navigation.NavigateTo("/donCongTacHistory");
+    }
+
+    private async Task ScanLocation()
+    {
+        try
+        {
+            var position = await JSRuntime.InvokeAsync<object>("getCurrentPosition");
+            var latitude = (double)position.GetType().GetProperty("latitude").GetValue(position);
+            var longitude = (double)position.GetType().GetProperty("longitude").GetValue(position);
+
+            var nearestHospital = hospitals
+                .Where(h => h.Latitude.HasValue && h.Longitude.HasValue)
+                .OrderBy(h => CalculateDistance(latitude, longitude, Convert.ToDouble(h.Latitude.Value), Convert.ToDouble(h.Longitude.Value)))
+                .FirstOrDefault();
+
+            if (nearestHospital != null)
+            {
+                SelectHospital(nearestHospital);
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Không tìm thấy bệnh viện gần vị trí của bạn. Vui lòng nhập thủ công.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error scanning location: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", "Đã xảy ra lỗi khi quét vị trí. Vui lòng thử lại.");
+        }
+    }
+
+    private double CalculateDistance(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double R = 6371e3;
+        var φ1 = lat1 * Math.PI / 180;
+        var φ2 = lat2 * Math.PI / 180;
+        var Δφ = (lat2 - lat1) * Math.PI / 180;
+        var Δλ = (lon2 - lon1) * Math.PI / 180;
+
+        var a = Math.Sin(Δφ / 2) * Math.Sin(Δφ / 2) +
+                Math.Cos(φ1) * Math.Cos(φ2) *
+                Math.Sin(Δλ / 2) * Math.Sin(Δλ / 2);
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+
+        return R * c;
+    }
+}
